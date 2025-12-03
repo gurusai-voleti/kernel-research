@@ -20,6 +20,7 @@
 #include "test/TestUtils.h"
 #include "test/TestSuite.h"
 #include <xdk/util/pwn_utils.h>
+#include <iostream>
 
 class UtilsRuntimeTests: public TestSuite {
     XdkDevice* xdk_;
@@ -33,9 +34,25 @@ public:
     TEST_METHOD(leaksKaslrBase, "leaks KASLR base") {
         uint64_t expected = xdk_->KaslrLeak();
 
-        for (int i = 0; i < 100; i++) {
-            uint64_t actual = leak_kaslr_base();
-            ASSERT_EQ(expected, actual);
+        int total = 2000;
+        int incorrect = 0;
+        for (int i = 0; i < total; i++) {
+            std::vector<std::vector<uint64_t>> debug_data;
+            uint64_t actual = leak_kaslr_base(100, 7, &debug_data);
+            if (actual != expected) {
+               printf("Iteration: %d failed, expected %llx, got %llx\n", i, expected, actual);
+               
+               for (size_t trial = 0; trial < debug_data.size(); trial++) {
+                   const auto& timings = debug_data[trial];
+                   printf("Trial %lu timings:\n", trial);
+                   for (size_t slot = 0; slot < timings.size(); slot++) {
+                       printf("Slot %lx: %lu\n", 0xffffffff81000000 + slot * 0x200000, timings[slot]);
+                   }
+               }
+               
+               incorrect++;
+            }
         }
+        ASSERT_EQ(0, incorrect);
     }
 };
