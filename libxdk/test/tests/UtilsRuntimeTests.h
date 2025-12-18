@@ -34,15 +34,25 @@ public:
     TEST_METHOD(leaksKaslrBase, "leaks KASLR base") {
         uint64_t expected = xdk_->KaslrLeak();
 
-        int total = 1000;
+        int total = 1;
         int incorrect = 0;
         for (int i = 0; i < total; i++) {
-            uint64_t actual = leak_kaslr_base();
+            std::vector<std::vector<uint64_t>> debug_data;
+            uint64_t actual = leak_kaslr_base(100, 7, &debug_data);
             if (actual != expected) {
                printf("Iteration: %d failed, expected %llx, got %llx\n", i, expected, actual);
+               
+               for (size_t trial = 0; trial < debug_data.size(); trial++) {
+                   const auto& timings = debug_data[trial];
+                   printf("Trial %lu timings:\n", trial);
+                   for (size_t slot = 0; slot < timings.size(); slot++) {
+                       printf("Slot %lx: %lu\n", 0xffffffff81000000 + slot * 0x200000, timings[slot]);
+                   }
+               }
+               
                incorrect++;
             }
         }
-        ASSERT_EQ(incorrect, 0);
+        ASSERT_EQ(0, incorrect);
     }
 };

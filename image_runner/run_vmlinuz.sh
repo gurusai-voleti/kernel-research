@@ -89,12 +89,12 @@ if [ ! -z "$CUSTOM_MODULES_TAR" ]; then
     IDE_IDX=$((IDE_IDX+1))
 fi
 
-qemu-system-x86_64 -m 3.5G -nographic -nodefaults -no-reboot \
+taskset -c 2,3 qemu-system-x86_64 -m 3.5G -nographic -nodefaults -no-reboot \
     -enable-kvm -cpu host -smp cores=2 \
     -kernel $VMLINUZ \
     -initrd $SCRIPT_DIR/initramfs.cpio \
     -nic user,model=virtio-net-pci \
     $SERIAL_PORTS $QEMU_ARGS \
-    -append "console=ttyS0 panic=-1 oops=panic loadpin.enable=0 loadpin.enforce=0$EXTRA_CMDLINE init=/init -- $COMMANDS_TO_RUN"
+    -append "isolcpus=1 console=ttyS0 panic=-1 oops=panic loadpin.enable=0 loadpin.enforce=0$EXTRA_CMDLINE init=/init -- $COMMANDS_TO_RUN"
 
 stty sane 2>/dev/null || true

