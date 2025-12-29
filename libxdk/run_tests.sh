@@ -45,8 +45,10 @@ mkdir -p test_results
 rm test_results/round_* test_results/dmesg_* 2>/dev/null || true
 
 echo "Running tests..."
+echo 'KASLR Base' `sudo cat /proc/kallsyms | grep "T._text" | cut -d ' ' -f1`
 for i in $(seq 1 $TIMES); do
-    $SCRIPT_DIR/../image_runner/run.sh "$DISTRO" "$RELEASE_NAME" --custom-modules=keep --only-command-output --no-rootfs-update --dmesg=test_results/dmesg_$i.txt --qemu-args="-D test_results/debug_$i.txt -d int,cpu_reset,unimp,guest_errors" -- /test_runner --target-db test/artifacts/kernelctf.kxdb $TEST_RUNNER_ARGS > test_results/round_$i.txt &
+    # $SCRIPT_DIR/../image_runner/run.sh "$DISTRO" "$RELEASE_NAME" --custom-modules=keep --only-command-output --no-rootfs-update --dmesg=test_results/dmesg_$i.txt --qemu-args="-D test_results/debug_$i.txt -d int,cpu_reset,unimp,guest_errors" -- /test_runner --target-db test/artifacts/kernelctf.kxdb $TEST_RUNNER_ARGS > test_results/round_$i.txt &
+    ./build/test/kernelXDKTests --target-db test/artifacts/kernelctf.kxdb $TEST_RUNNER_ARGS > test_results/round_$i.txt &
 done
 
 wait
