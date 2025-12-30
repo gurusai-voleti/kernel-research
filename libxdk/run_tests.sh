@@ -45,10 +45,23 @@ mkdir -p test_results
 rm test_results/round_* test_results/dmesg_* 2>/dev/null || true
 
 echo "Running tests..."
-echo 'KASLR Base' `sudo cat /proc/kallsyms | grep "T._text" | cut -d ' ' -f1`
+# echo 'KASLR Base' `sudo cat /proc/kallsyms | grep "T._text" | cut -d ' ' -f1`
 for i in $(seq 1 $TIMES); do
-    # $SCRIPT_DIR/../image_runner/run.sh "$DISTRO" "$RELEASE_NAME" --custom-modules=keep --only-command-output --no-rootfs-update --dmesg=test_results/dmesg_$i.txt --qemu-args="-D test_results/debug_$i.txt -d int,cpu_reset,unimp,guest_errors" -- /test_runner --target-db test/artifacts/kernelctf.kxdb $TEST_RUNNER_ARGS > test_results/round_$i.txt &
-    ./build/test/kernelXDKTests --target-db test/artifacts/kernelctf.kxdb $TEST_RUNNER_ARGS > test_results/round_$i.txt &
+    # Start TCP listener
+    PORT=$((4444 + i))
+    python3 $SCRIPT_DIR/util/tcp_listener.py $PORT test_results/round_$i.txt &
+    LISTENER_PID=$!
+    
+    # Give listener a moment to start
+    sleep 0.1
+
+    $SCRIPT_DIR/../image_runner/run.sh "$DISTRO" "$RELEASE_NAME" --custom-modules=keep --only-command-output --no-rootfs-update --dmesg=test_results/dmesg_$i.txt --qemu-args="-D test_results/debug_$i.txt -d int,cpu_reset,unimp,guest_errors" -- "ip link set eth0 up && ip addr add 10.0.2.15/24 dev eth0 && /test_runner --tcp-log 10.0.2.2:$PORT --target-db test/artifacts/kernelctf.kxdb $TEST_RUNNER_ARGS" &
+    
+    # Wait for QEMU
+    wait $!
+    
+    # Kill listener if it's still running (it should exit on connection close if we implement it that way, but safety first)
+    kill $LISTENER_PID 2>/dev/null || true
 done
 
 wait

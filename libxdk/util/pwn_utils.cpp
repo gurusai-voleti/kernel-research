@@ -89,8 +89,9 @@ std::optional<uint64_t> try_find_edge(const std::vector<uint64_t>& timings) {
 
     std::cout << "median: " << median << " threshold: " << threshold << std::endl;
     for (size_t slot = 0; slot < timings.size(); slot++) {
-        printf("%lx: %lu \n", slot_to_addr(slot), timings[slot]);
+        std::cout << std::hex << slot_to_addr(slot) << ": " << std::dec << timings[slot] << std::endl;
     }
+
 
     // 1. Create Binary Mask
     std::vector<int> mask(timings.size());
@@ -217,16 +218,17 @@ std::optional<uint64_t> try_leak_kaslr_base(int samples) {
         }
     }
 
-    printf("--- COLLECT SAMPLES BEGIN\n");
+    std::cout << "--- COLLECT SAMPLES BEGIN" << std::endl;
     for (size_t i = 0; i < all_timings.size(); i++) {
-        printf("%lx: ", slot_to_addr(i)); 
-        const auto& ts = all_timings[i]; 
+        std::cout << std::hex << slot_to_addr(i) << ": ";
+        const auto& ts = all_timings[i];
         for (auto t : ts) {
-            printf("%lu ", t);
+            std::cout << std::dec << t << " ";
         }
-        printf("\n");
+        std::cout << std::endl;
     }
-    printf("--- COLLECT SAMPLES END\n");
+    std::cout << "--- COLLECT SAMPLES END" << std::endl;
+
 
     return std::nullopt;
 

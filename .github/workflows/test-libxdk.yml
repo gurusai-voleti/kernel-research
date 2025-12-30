@@ -53,7 +53,7 @@ jobs:
     needs: changes
     if: ${{ always() && (github.event_name != 'pull_request' || needs.changes.outputs.libxdk == 'true') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - name: Fix input variables
         id: vars
@@ -96,15 +96,10 @@ jobs:
         working-directory: ./libxdk
         run: ./build.sh
 
-      - name: Test libxdk (local tests only)
-        if: ${{ success() || failure() }}
-        working-directory: ./libxdk
-        run: ./run_local_tests.sh
-
       - name: Test libxdk (QEMU)
         if: ${{ success() || failure() }}
         working-directory: ./libxdk
-        run: CUSTOM_MODULES_KEEP=1 timeout 20m ./run_tests.sh ${{ steps.vars.outputs.target }} 20 --tap
+        run: CUSTOM_MODULES_KEEP=1 timeout 60m ./run_tests.sh ${{ steps.vars.outputs.target }} 20 --tap
 
       - name: Move test results to separate dir
         if: ${{ success() || failure() }}

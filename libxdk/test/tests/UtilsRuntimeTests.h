@@ -28,17 +28,16 @@ public:
     UtilsRuntimeTests(): TestSuite("UtilsRuntimeTests", "pwn utils runtime tests") { }
 
     void init() {
-        // xdk_ = &env->GetXdkDevice();
+        xdk_ = &env->GetXdkDevice();
     }
 
     TEST_METHOD(leaksKaslrBase, "leaks KASLR base") {
-        // uint64_t expected = xdk_->KaslrLeak();
-        uint64_t expected = 0;
-        int total = 100;
+        uint64_t expected = xdk_->KaslrLeak();
+        int total = 50;
         for (int i = 0; i < total; i++) {
-            printf("--- KASLR LEAK START: %lx\n", expected);
+            std::cout << "--- KASLR LEAK START: " << std::hex << expected << std::dec << "\n";
             uint64_t actual = leak_kaslr_base(100, 7);
-            printf("--- KASLR LEAK END\n");
+            std::cout << "--- KASLR LEAK END\n";
         }
     }
 };

@@ -18,6 +18,7 @@
 #include <iostream>
 #include "test/TestRunner.h"
 #include "test/logging/TapLogger.h"
+#include "test/logging/TcpLogger.h"
 #include "test/tests/TargetDbTests.h"
 #include "test/tests/UtilsRuntimeTests.h"
 #include "test/tests/UtilsTests.h"
@@ -55,8 +56,12 @@ public:
         runner_.SetTargetDbPath(args_.getOption("target-db").value_or("test/artifacts/targets.kxdb"));
         runner_.SetRepeatCount(args_.getInt("repeat").value_or(1));
 
-        if (args_.getOption("tap"))
+        if (auto tcp_log = args_.getOption("tcp-log"))
+            runner_.SetLogger(new TcpLogger(*tcp_log));
+        else if (args_.getOption("tap"))
             runner_.SetLogger(new TapLogger());
+
+
     }
 
     int Run() {
