@@ -45,8 +45,8 @@ mkdir -p test_results
 rm test_results/round_* test_results/dmesg_* 2>/dev/null || true
 
 echo "Running tests..."
-for i in $(seq 1 $TIMES); do
-    $SCRIPT_DIR/../image_runner/run.sh "$DISTRO" "$RELEASE_NAME" --custom-modules=keep --only-command-output --no-rootfs-update --dmesg=test_results/dmesg_$i.txt --qemu-args="-D test_results/debug_$i.txt -d int,cpu_reset,unimp,guest_errors" -- /test_runner --target-db test/artifacts/kernelctf.kxdb $TEST_RUNNER_ARGS > test_results/round_$i.txt &
+for i in $(seq 1 200); do
+    $SCRIPT_DIR/../image_runner/run.sh "$DISTRO" "$RELEASE_NAME" --custom-modules=keep --only-command-output --no-rootfs-update --dmesg=test_results/dmesg_$i.txt --qemu-args="-D test_results/debug_$i.txt -d int,cpu_reset,unimp,guest_errors" -- /test_runner --target-db test/artifacts/kernelctf.kxdb $TEST_RUNNER_ARGS > test_results/round_$i.txt
 done
 
 wait
@@ -59,7 +59,7 @@ printf "\nSummary:\n"
 if [[ "$TIMES" == "1" ]]; then
     test/check_test_run.py 1
 else
-    for i in $(seq 1 $TIMES); do
+    for i in $(seq 1 200); do
         echo -n "Round #$i: "
         test/check_test_run.py $i && echo "ok" || FAIL=1
     done

