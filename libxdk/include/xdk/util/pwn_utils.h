@@ -67,8 +67,9 @@ void pin_cpu(int cpu);
  *
  * @param samples The number of prefetch samples to collect per candidate address.
  * @param trials The number of addresses to collect for majority voting.
+ * @param window_size The size of the sliding window for median filtering.
  * @param debug_data Optional pointer to a vector to store debug timing data.
  * @return The kernel base address.
  * @throws ExpKitError if the address could not be leaked.
  */
-uint64_t leak_kaslr_base(int samples = 100, int trials = 3, std::vector<std::vector<uint64_t>>* debug_data = nullptr);
+uint64_t leak_kaslr_base(int samples = 100, int trials = 3, int window_size = 28, std::vector<std::vector<uint64_t>>* debug_data = nullptr);

