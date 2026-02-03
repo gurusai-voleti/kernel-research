@@ -69,9 +69,3 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-
-      - name: Send Google Chat Notification (on failure)
-        if: ${{ needs.tests.result != 'success' }}
-        env:
-          WEBHOOK_URL: ${{ secrets.WEBHOOK_EXPKIT }}
-        run: node ./.github/scripts/send_notification.js
