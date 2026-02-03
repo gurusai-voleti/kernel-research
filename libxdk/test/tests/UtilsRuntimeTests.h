@@ -38,7 +38,9 @@ public:
         int incorrect = 0;
         for (int i = 0; i < total; i++) {
             std::vector<std::vector<uint64_t>> debug_data;
-            uint64_t actual = leak_kaslr_base(100, 7, 5, &debug_data);
+            const char* env_window_size = std::getenv("KASLR_WINDOW_SIZE");
+            int window_size = env_window_size ? std::atoi(env_window_size) : 5;
+            uint64_t actual = leak_kaslr_base(100, 7, window_size, &debug_data);
             if (actual != expected) {
                printf("Iteration: %d failed, expected %llx, got %llx\n", i, expected, actual);
                

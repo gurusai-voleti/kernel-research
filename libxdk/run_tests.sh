@@ -33,7 +33,15 @@ cp -r test/artifacts ../image_runner/rootfs/test/
 echo "Updating rootfs..."
 (cd  ../image_runner; ./update_rootfs_image.sh)
 
-$SCRIPT_DIR/../image_db/download_release.sh "$DISTRO" "$RELEASE_NAME" "vmlinuz"
+$SCRIPT_DIR/../image_db/download_release.sh "$DISTRO" "$RELEASE_NAME" "vmlinuz,dbgsym"
+
+VMLINUX="$RELEASE_DIR/vmlinux"
+if [ -f "$VMLINUX" ]; then
+    WINDOW_SIZE=$($SCRIPT_DIR/util/kernel_pages.py "$VMLINUX" | grep "RUNTIME PAGES:" | awk '{print $3}')
+    echo "Calculated KASLR window size: $WINDOW_SIZE"
+else
+    echo "Warning: vmlinux not found, using default KASLR window size"
+fi
 
 if [[ "$CUSTOM_MODULES" != "keep" && ( -z "$CUSTOM_MODULES_KEEP" || ! -f "$RELEASE_DIR/custom_modules.tar") ]]; then
     echo "Building xdk kernel module..."
@@ -46,7 +54,11 @@ rm test_results/round_* test_results/dmesg_* 2>/dev/null || true
 
 echo "Running tests..."
 for i in $(seq 1 $TIMES); do
-    $SCRIPT_DIR/../image_runner/run.sh "$DISTRO" "$RELEASE_NAME" --custom-modules=keep --only-command-output --no-rootfs-update --dmesg=test_results/dmesg_$i.txt --qemu-args="-D test_results/debug_$i.txt -d int,cpu_reset,unimp,guest_errors" -- /test_runner --target-db test/artifacts/kernelctf.kxdb $TEST_RUNNER_ARGS > test_results/round_$i.txt
+    CMD_PREFIX=""
+    if [ ! -z "$WINDOW_SIZE" ]; then
+        CMD_PREFIX="env KASLR_WINDOW_SIZE=$WINDOW_SIZE"
+    fi
+    $SCRIPT_DIR/../image_runner/run.sh "$DISTRO" "$RELEASE_NAME" --custom-modules=keep --only-command-output --no-rootfs-update --dmesg=test_results/dmesg_$i.txt --qemu-args="-D test_results/debug_$i.txt -d int,cpu_reset,unimp,guest_errors" -- $CMD_PREFIX /test_runner --target-db test/artifacts/kernelctf.kxdb $TEST_RUNNER_ARGS > test_results/round_$i.txt
 done
 
 wait
